@@ -1,0 +1,47 @@
+🏢 EUROTERCEROS - Sistema de Gestión de Terceros
+=============================================
+
+✓ TERCERO APROBADO - EUROTERCEROS
+==================
+
+🎉 ¡Enhorabuena! El tercero ha sido aprobado exitosamente y ya puede comenzar operaciones comerciales.
+
+🆔 IDENTIFICACIÓN:
+==================
+- Tipo de Persona: {{ identificacion.tipo_persona }}
+- Tipo de Documento: {{ identificacion.tipo_documento }}
+- Número de Documento: {{ identificacion.numero_documento }}
+{% if identificacion.digito_verificacion %}
+- Dígito de Verificación: {{ identificacion.digito_verificacion }}
+{% endif %}
+
+👤 INFORMACIÓN PERSONAL:
+========================
+- Nombre Completo: {{ informacion_personal.nombre_completo }}
+- Nombres: {{ informacion_personal.nombres }}
+- Apellidos: {{ informacion_personal.apellidos }}
+- Razón Social: {{ informacion_personal.razon_social }}
+{% if informacion_personal.fecha_nacimiento != 'N/A' %}
+- Fecha de Nacimiento: {{ informacion_personal.fecha_nacimiento }}
+{% endif %}
+
+📞 INFORMACIÓN DE CONTACTO:
+===========================
+- Email: {{ informacion_contacto.email }}
+- Teléfono: {{ informacion_contacto.telefono }}
+- Celular: {{ informacion_contacto.celular }}
+- Ciudad: {{ informacion_contacto.ciudad }}
+- Dirección: {{ informacion_contacto.direccion }}
+- Departamento: {{ informacion_contacto.departamento }}
+- País: {{ informacion_contacto.pais }}
+
+{% if fecha_aprobacion %}
+- Fecha de Aprobación: {{ fecha_aprobacion }}
+{% endif %}
+
+-------------------------------------------------------------------------------
+📧 Este correo fue enviado automáticamente desde el sistema de gestión de terceros.
+📅 Fecha de envío: {{ fecha_envio }}
+🏢 Para consultas, contacte al departamento correspondiente.
+
+🏢 EUROTERCEROS Sistema de Gestión
