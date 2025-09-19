@@ -113,7 +113,6 @@ class StrataDataService:
     
     def _generar_codigo_unico(self):
         """Generar código único para rastreo de consultas"""
-        # 17 dígitos: timestamp ms + random
         return str(int(time.time() * 1000)) + str(random.randint(100, 999))
     
     def _generar_csv_temporal(self, personas: List[Dict[str, str]]) -> str:
@@ -182,29 +181,20 @@ class StrataDataService:
                 # Disparar búsquedas en todos los servicios
                 resultado_busquedas = self._disparar_busquedas(resultado_envio['id_busqueda'])
                 
-                # Intentar esperar logs si se proporciona username
-                logs_info = None
-                if username:
-                    logs_info = self._esperar_logs(
-                        resultado_envio['codigo_busqueda'], 
-                        username, 
-                        max_wait=60  # Reducido para API
-                    )
+                # No esperamos logs ya que Stradata ejecuta en background
                 
                 return {
                     'success': True,
-                    'mensaje': 'Consulta enviada exitosamente a Stradata',
-                    'personas_consultadas': len(personas),
-                    'personas': [f"{p['nombre']} ({p['identificacion']})" for p in personas],
-                    'detalles_consulta': {
+                    'message': 'Proceso finalizado: consultas disparadas. Stradata seguirá ejecutando en background y enviará resultados al correo.',
+                    'data': {
+                        'personas_consultadas': len(personas),
+                        'personas': [f"{p['nombre']} ({p['identificacion']})" for p in personas],
                         'id_busqueda': resultado_envio['id_busqueda'],
                         'codigo_busqueda': resultado_envio['codigo_busqueda'],
                         'id_plantilla': resultado_envio['id_plantilla'],
-                        'servicios_disparados': resultado_busquedas,
-                        'logs_encontrados': logs_info is not None,
-                        'logs_info': logs_info
-                    },
-                    'nota': 'Stradata seguirá ejecutando en background y enviará resultados al correo configurado.'
+                        'servicios': resultado_busquedas['servicios_disparados'],
+                        'resumen_servicios': resultado_busquedas['resumen']
+                    }
                 }
                 
             finally:
@@ -337,8 +327,11 @@ class StrataDataService:
     def _disparar_busquedas(self, id_busqueda: int) -> Dict[str, Any]:
         """Dispara todas las búsquedas en los diferentes servicios de Stradata"""
         resultados = {}
+        servicios_exitosos = 0
+        servicios_fallidos = 0
         
         for url in self.BUSCAR_ENDPOINTS:
+            servicio_nombre = url.split('/')[-2]  # Extrae el nombre del servicio de la URL
             try:
                 resp = self.session.post(
                     url, 
@@ -346,20 +339,31 @@ class StrataDataService:
                     verify=False, 
                     timeout=180
                 )
-                resultados[url] = {
+                resultados[servicio_nombre] = {
                     'status': 'success',
-                    'status_code': resp.status_code
+                    'status_code': resp.status_code,
+                    'url': url
                 }
-                logger.info(f"[OK] {url} disparado exitosamente")
+                servicios_exitosos += 1
+                logger.info(f"[OK] {servicio_nombre} disparado exitosamente")
             except Exception as e:
-                resultados[url] = {
+                resultados[servicio_nombre] = {
                     'status': 'error',
-                    'error': str(e)
+                    'error': str(e),
+                    'url': url
                 }
-                logger.error(f"[ERROR] {url} error: {e}")
+                servicios_fallidos += 1
+                logger.error(f"[ERROR] {servicio_nombre} error: {e}")
             time.sleep(1)
         
-        return resultados
+        return {
+            'servicios_disparados': resultados,
+            'resumen': {
+                'total': len(self.BUSCAR_ENDPOINTS),
+                'exitosos': servicios_exitosos,
+                'fallidos': servicios_fallidos
+            }
+        }
     
     def _esperar_logs(self, codigo_busqueda: str, username: str, max_wait: int = 300) -> Optional[Dict]:
         """
