@@ -704,93 +704,130 @@ def consultar_tercero_stradata(request, tercero_id):
 def _preparar_datos_tercero(tercero):
     """
     Prepara los datos del tercero con todas sus relaciones para la consulta
+    Actualizado para manejar tanto personas naturales como jurídicas
     """
     # Datos básicos del tercero
     tercero_data = {
         'id': tercero.id,
-        'nombres': tercero.nombres,
-        'apellidos': tercero.apellidos or '',
         'numero_documento': tercero.numero_documento,
         'tipo_documento': tercero.tipo_documento,
+        'tipo_persona': getattr(tercero, 'tipo_persona', 'natural'),
     }
     
-    # Representantes legales
+    # Agregar nombre según el tipo de persona
+    if getattr(tercero, 'tipo_persona', 'natural') == 'juridica':
+        # Para persona jurídica, usar razón social o nombres como fallback
+        tercero_data['razon_social'] = tercero.nombres  # En el modelo, nombres almacena la razón social
+        tercero_data['nombres'] = tercero.nombres
+        tercero_data['apellidos'] = tercero.apellidos or ''
+    else:
+        # Para persona natural
+        tercero_data['nombres'] = tercero.nombres
+        tercero_data['apellidos'] = tercero.apellidos or ''
+    
+    # Representantes legales - CORREGIDO: usar numero_identificacion
     representantes = []
     if hasattr(tercero, 'representantes_legales'):
         for rep in tercero.representantes_legales.all():
-            # Dividir nombre_completo en nombres y apellidos
-            nombre_completo = rep.nombre_completo or ''
-            partes_nombre = nombre_completo.split()
-            nombres = ' '.join(partes_nombre[:2]) if len(partes_nombre) >= 2 else nombre_completo
-            apellidos = ' '.join(partes_nombre[2:]) if len(partes_nombre) > 2 else ''
-            
             representantes.append({
-                'nombres': nombres,
-                'apellidos': apellidos,
-                'numero_documento': rep.numero_identificacion,
-                'tipo_documento': rep.tipo_identificacion,
+                'nombre_completo': rep.nombre_completo,
+                'numero_identificacion': rep.numero_identificacion,  # CORREGIDO
+                'tipo_identificacion': rep.tipo_identificacion,
                 'telefono': getattr(rep, 'telefono', ''),
                 'direccion': getattr(rep, 'direccion', ''),
             })
     tercero_data['representantes_legales'] = representantes
+    tercero_data['representantes'] = representantes  # Compatibilidad
     
     # Información PEP
     pep_info = []
     if hasattr(tercero, 'informacion_pep_nueva'):
         for pep in tercero.informacion_pep_nueva.all():
             pep_info.append({
-                'nombres_pep': pep.nombre,
-                'numero_documento_pep': pep.numero_identificacion,
-                'tipo_documento': pep.tipo,
-                'cargo_pep': getattr(pep, 'cargo', ''),
-                'entidad_pep': getattr(pep, 'entidad', ''),
+                'nombre': pep.nombre,
+                'numero_identificacion': pep.numero_identificacion,
+                'tipo': pep.tipo,
+                'cargo': getattr(pep, 'cargo', ''),
+                'entidad': getattr(pep, 'entidad', ''),
+                'parentesco': getattr(pep, 'parentesco', ''),
             })
     tercero_data['informacion_pep'] = pep_info
+    tercero_data['informacion_pep_nueva'] = pep_info  # Compatibilidad
     
-    # Accionistas
+    # Accionistas con estructura jerárquica (incluir subaccionistas)
     accionistas = []
+    subaccionistas = []
+    
     if hasattr(tercero, 'accionistas'):
-        for acc in tercero.accionistas.all():
-            # Dividir nombre en nombres y apellidos
-            nombre_completo = acc.nombre or ''
-            partes_nombre = nombre_completo.split()
-            nombres = ' '.join(partes_nombre[:2]) if len(partes_nombre) >= 2 else nombre_completo
-            apellidos = ' '.join(partes_nombre[2:]) if len(partes_nombre) > 2 else ''
-            
-            accionistas.append({
-                'nombres': nombres,
-                'apellidos': apellidos,
-                'numero_documento': acc.numero_identificacion,
-                'tipo_documento': acc.tipo_identificacion,
+        # Obtener accionistas principales (nivel 0)
+        accionistas_principales = tercero.accionistas.filter(nivel=0)
+        
+        for acc in accionistas_principales:
+            # Agregar accionista principal
+            accionista_data = {
+                'nombre': acc.nombre,
+                'numero_identificacion': acc.numero_identificacion,
+                'tipo_identificacion': acc.tipo_identificacion,
                 'porcentaje_participacion': getattr(acc, 'porcentaje_participacion', 0),
-            })
+                'porcentaje': getattr(acc, 'porcentaje_participacion', 0),  # Compatibilidad
+                'nivel': acc.nivel,
+                'es_principal': True
+            }
+            accionistas.append(accionista_data)
+            
+            # Obtener y agregar subaccionistas recursivamente
+            def obtener_subaccionistas_recursivo(accionista_padre, nivel=1):
+                """Función recursiva para obtener todos los subaccionistas"""
+                subaccionistas_lista = []
+                
+                for sub_acc in accionista_padre.get_sub_accionistas():
+                    sub_data = {
+                        'nombre': sub_acc.nombre,
+                        'numero_identificacion': sub_acc.numero_identificacion,
+                        'tipo_identificacion': sub_acc.tipo_identificacion,
+                        'porcentaje_participacion': getattr(sub_acc, 'porcentaje_participacion', 0),
+                        'porcentaje': getattr(sub_acc, 'porcentaje_participacion', 0),
+                        'nivel': sub_acc.nivel,
+                        'es_principal': False,
+                        'accionista_padre': accionista_padre.nombre,
+                        'accionista_padre_id': accionista_padre.numero_identificacion
+                    }
+                    subaccionistas_lista.append(sub_data)
+                    
+                    # Buscar subaccionistas del subaccionista (recursivo)
+                    sub_subaccionistas = obtener_subaccionistas_recursivo(sub_acc, nivel + 1)
+                    subaccionistas_lista.extend(sub_subaccionistas)
+                
+                return subaccionistas_lista
+            
+            # Obtener todos los subaccionistas de este accionista principal
+            subs = obtener_subaccionistas_recursivo(acc)
+            subaccionistas.extend(subs)
+    
     tercero_data['accionistas'] = accionistas
+    tercero_data['subaccionistas'] = subaccionistas
+    tercero_data['todos_accionistas'] = accionistas + subaccionistas  # Lista combinada para procesamiento
     
     # Composición accionaria adicional
+    composicion_accionaria = []
     if hasattr(tercero, 'composicion_accionaria'):
         for comp in tercero.composicion_accionaria.all():
             # Evitar duplicados con accionistas
             ya_existe = any(
-                a['numero_documento'] == comp.numero_identificacion 
+                a['numero_identificacion'] == comp.numero_identificacion 
                 for a in accionistas
             )
             if not ya_existe:
-                # Dividir nombre_razon_social en nombres y apellidos
-                nombre_completo = comp.nombre_razon_social or ''
-                partes_nombre = nombre_completo.split()
-                nombres = ' '.join(partes_nombre[:2]) if len(partes_nombre) >= 2 else nombre_completo
-                apellidos = ' '.join(partes_nombre[2:]) if len(partes_nombre) > 2 else ''
-                
-                accionistas.append({
-                    'nombres': nombres,
-                    'apellidos': apellidos,
-                    'numero_documento': comp.numero_identificacion,
-                    'tipo_documento': comp.tipo_identificacion,
-                    'porcentaje_participacion': comp.porcentaje_participacion,
+                composicion_accionaria.append({
+                    'nombre_razon_social': comp.nombre_razon_social,
+                    'numero_identificacion': comp.numero_identificacion,
+                    'tipo_identificacion': comp.tipo_identificacion,
+                    'porcentaje_participacion': getattr(comp, 'porcentaje_participacion', 0),
                 })
-        tercero_data['accionistas'] = accionistas
+    tercero_data['composicion_accionaria'] = composicion_accionaria
     
     return tercero_data
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -806,15 +843,23 @@ def resumen_personas_tercero(request, tercero_id):
         tercero_data = _preparar_datos_tercero(tercero)
         
         # Crear resumen de personas
+        # Manejar nombre según tipo de persona
+        if getattr(tercero, 'tipo_persona', 'natural') == 'juridica':
+            nombre_completo = tercero.nombres  # Para jurídicas, nombres contiene la razón social
+        else:
+            nombre_completo = f"{tercero.nombres} {tercero.apellidos}".strip()
+        
         resumen = {
             'tercero': {
-                'nombre_completo': f"{tercero.nombres} {tercero.apellidos}".strip(),
+                'nombre_completo': nombre_completo,
                 'numero_documento': tercero.numero_documento,
             },
             'contadores': {
                 'representantes_legales': len(tercero_data.get('representantes_legales', [])),
                 'informacion_pep': len(tercero_data.get('informacion_pep', [])),
                 'accionistas': len(tercero_data.get('accionistas', [])),
+                'subaccionistas': len(tercero_data.get('subaccionistas', [])),
+                'total_accionistas': len(tercero_data.get('todos_accionistas', [])),
             },
             'detalles': {}
         }
@@ -822,27 +867,34 @@ def resumen_personas_tercero(request, tercero_id):
         # Detalles de representantes legales
         if tercero_data.get('representantes_legales'):
             resumen['detalles']['representantes_legales'] = [
-                f"{rep['nombres']} {rep['apellidos']} ({rep['numero_documento']})".strip()
+                f"{rep.get('nombre_completo', '')} ({rep.get('numero_identificacion', '')})".strip()
                 for rep in tercero_data['representantes_legales']
             ]
         
         # Detalles de personas PEP
         if tercero_data.get('informacion_pep'):
             resumen['detalles']['informacion_pep'] = [
-                f"{pep['nombres_pep']} ({pep['numero_documento_pep']}) - {pep.get('parentesco', '')}"
+                f"{pep.get('nombre', '')} ({pep.get('numero_identificacion', '')}) - {pep.get('parentesco', '')}"
                 for pep in tercero_data['informacion_pep']
             ]
         
         # Detalles de accionistas
         if tercero_data.get('accionistas'):
             resumen['detalles']['accionistas'] = [
-                f"{acc['nombres']} {acc['apellidos']} ({acc['numero_documento']}) - {acc.get('porcentaje_participacion', 0)}%".strip()
+                f"{acc.get('nombre', '')} ({acc.get('numero_identificacion', '')}) - {acc.get('porcentaje_participacion', 0)}%".strip()
                 for acc in tercero_data['accionistas']
             ]
         
-        # Total de personas a consultar
+        # Detalles de subaccionistas
+        if tercero_data.get('subaccionistas'):
+            resumen['detalles']['subaccionistas'] = [
+                f"{sub.get('nombre', '')} ({sub.get('numero_identificacion', '')}) - {sub.get('porcentaje_participacion', 0)}% [Sub de: {sub.get('accionista_padre', '')}]".strip()
+                for sub in tercero_data['subaccionistas']
+            ]
+        
+        # Total de personas a consultar (incluir subaccionistas)
         total_personas = 1  # El tercero principal
-        for categoria in ['representantes_legales', 'informacion_pep', 'accionistas']:
+        for categoria in ['representantes_legales', 'informacion_pep', 'todos_accionistas']:
             total_personas += len(tercero_data.get(categoria, []))
         
         resumen['total_personas_consultar'] = total_personas

@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
+from django.core.exceptions import ValidationError
 from datetime import datetime
 import logging
 import pandas as pd
@@ -18,6 +19,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils.dataframe import dataframe_to_rows
 import io
+import json
 
 User = get_user_model()
 
@@ -579,36 +581,36 @@ class TerceroViewSet(viewsets.ModelViewSet):
         
         # ===== PROCESAR INFORMACIÓN PEP CRÍTICA (SARLAFT) =====
         # Obtener información PEP tanto del formato frontend (informacionPEP) como backend (informacion_pep)
-        logger.info(f"🔍 DEBUG PEP - serializer.validated_data tiene informacion_pep: {'informacion_pep' in serializer.validated_data}")
-        logger.info(f"🔍 DEBUG PEP - serializer.validated_data tiene informacionPEP: {'informacionPEP' in serializer.validated_data}")
-        logger.info(f"🔍 DEBUG PEP - request.data tiene informacion_pep: {'informacion_pep' in request.data}")
-        logger.info(f"🔍 DEBUG PEP - request.data tiene informacionPEP: {'informacionPEP' in request.data}")
+        logger.info(f"DEBUG PEP - serializer.validated_data tiene informacion_pep: {'informacion_pep' in serializer.validated_data}")
+        logger.info(f"DEBUG PEP - serializer.validated_data tiene informacionPEP: {'informacionPEP' in serializer.validated_data}")
+        logger.info(f"DEBUG PEP - request.data tiene informacion_pep: {'informacion_pep' in request.data}")
+        logger.info(f"DEBUG PEP - request.data tiene informacionPEP: {'informacionPEP' in request.data}")
         
         informacion_pep_data = (
             serializer.validated_data.get('informacion_pep', []) or 
             serializer.validated_data.get('informacionPEP', []) or
             request.data.get('informacionPEP', []) or
-            request.data.get('informacion_pep', [])  # ✅ AGREGAR ESTE CASO FALTANTE
+            request.data.get('informacion_pep', [])  # AGREGAR ESTE CASO FALTANTE
         )
         
-        logger.info(f"🔍 DEBUG PEP - informacion_pep_data inicial: {informacion_pep_data}")
-        logger.info(f"🔍 DEBUG PEP - tipo de informacion_pep_data: {type(informacion_pep_data)}")
+        logger.info(f"DEBUG PEP - informacion_pep_data inicial: {informacion_pep_data}")
+        logger.info(f"DEBUG PEP - tipo de informacion_pep_data: {type(informacion_pep_data)}")
         
-        # 🔍 Si viene como string JSON, parsearlo
+        # Si viene como string JSON, parsearlo
         if isinstance(informacion_pep_data, str):
             try:
                 import json
                 informacion_pep_data = json.loads(informacion_pep_data)
-                logger.info(f"🔄 PEP parseado desde JSON string: {len(informacion_pep_data)} registros")
+                logger.info(f"PEP parseado desde JSON string: {len(informacion_pep_data)} registros")
             except json.JSONDecodeError as e:
-                logger.error(f"❌ Error parseando JSON de información PEP: {e}")
+                logger.error(f"Error parseando JSON de información PEP: {e}")
                 informacion_pep_data = []
         
         # Asegurar que sea una lista
         if not isinstance(informacion_pep_data, list):
             informacion_pep_data = []
             
-        logger.info(f"🔍 DEBUG PEP - informacion_pep_data final: {len(informacion_pep_data)} registros")
+        logger.info(f"DEBUG PEP - informacion_pep_data final: {len(informacion_pep_data)} registros")
         
         if informacion_pep_data:
             logger.info(f"Procesando {len(informacion_pep_data)} registros PEP para tercero {tercero.id}")
@@ -680,25 +682,25 @@ class TerceroViewSet(viewsets.ModelViewSet):
                         'error': f'Error procesando información PEP: {str(e)}'
                     }, status=status.HTTP_400_BAD_REQUEST)
             
-            logger.info(f"✅ {len(pep_registros_creados)} registros PEP creados exitosamente para tercero {tercero.id}")
+            logger.info(f"EXITO: {len(pep_registros_creados)} registros PEP creados exitosamente para tercero {tercero.id}")
         
         # ===== PROCESAR REPRESENTANTES LEGALES =====
-        logger.info(f"🔍 DEBUG REPS - form_data keys: {list(form_data.keys())}")
-        logger.info(f"🔍 DEBUG REPS - form_data representantes: {form_data.get('representantes', 'NO_ENCONTRADO')}")
+        logger.info(f"DEBUG REPS - form_data keys: {list(form_data.keys())}")
+        logger.info(f"DEBUG REPS - form_data representantes: {form_data.get('representantes', 'NO_ENCONTRADO')}")
         
         representantes_data = form_data.get('representantes', [])
-        logger.info(f"🔍 DEBUG REPS - representantes_data: {representantes_data}")
-        logger.info(f"🔍 DEBUG REPS - tipo representantes_data: {type(representantes_data)}")
-        logger.info(f"🔍 DEBUG REPS - longitud representantes_data: {len(representantes_data) if representantes_data else 0}")
+        logger.info(f"DEBUG REPS - representantes_data: {representantes_data}")
+        logger.info(f"DEBUG REPS - tipo representantes_data: {type(representantes_data)}")
+        logger.info(f"DEBUG REPS - longitud representantes_data: {len(representantes_data) if representantes_data else 0}")
         
         # Si es string, intentar parsear manualmente
         if isinstance(representantes_data, str):
-            logger.warning(f"⚠️ Representantes llegó como string, parseando: {representantes_data[:100]}...")
+            logger.warning(f"ADVERTENCIA: Representantes llego como string, parseando: {representantes_data[:100]}...")
             try:
                 representantes_data = json.loads(representantes_data)
-                logger.info(f"✅ Representantes parseados correctamente: {len(representantes_data)} items")
+                logger.info(f"EXITO: Representantes parseados correctamente: {len(representantes_data)} items")
             except json.JSONDecodeError as e:
-                logger.error(f"❌ Error parseando representantes JSON: {e}")
+                logger.error(f"ERROR: Error parseando representantes JSON: {e}")
                 representantes_data = []
         
         if representantes_data:
@@ -732,56 +734,69 @@ class TerceroViewSet(viewsets.ModelViewSet):
         
         # ===== PROCESAR ACCIONISTAS =====
         accionistas_data = form_data.get('accionistas', [])
-        logger.info(f"🔍 DEBUG ACCIONISTAS - accionistas_data: {accionistas_data}")
-        logger.info(f"🔍 DEBUG ACCIONISTAS - tipo accionistas_data: {type(accionistas_data)}")
-        logger.info(f"🔍 DEBUG ACCIONISTAS - longitud accionistas_data: {len(accionistas_data) if accionistas_data else 0}")
+        logger.info(f"DEBUG ACCIONISTAS - accionistas_data: {accionistas_data}")
+        logger.info(f"DEBUG ACCIONISTAS - tipo accionistas_data: {type(accionistas_data)}")
+        logger.info(f"DEBUG ACCIONISTAS - longitud accionistas_data: {len(accionistas_data) if accionistas_data else 0}")
         
         # Si es string, intentar parsear manualmente
-        if isinstance(accionistas_data, str):
-            logger.warning(f"⚠️ Accionistas llegó como string, parseando: {accionistas_data[:100]}...")
-            try:
-                accionistas_data = json.loads(accionistas_data)
-                logger.info(f"✅ Accionistas parseados correctamente: {len(accionistas_data)} items")
-            except json.JSONDecodeError as e:
-                logger.error(f"❌ Error parseando accionistas JSON: {e}")
-                accionistas_data = []
+        # ===== PROCESAMIENTO ACCIONISTAS CON ESTRUCTURA JERÁRQUICA =====
+        from terceros.utils.accionistas_utils import procesar_accionistas_completo
+        from terceros.serializers import AccionistasMixedSerializer
+        import json as json_module  # Usar alias para evitar conflictos
         
-        if accionistas_data:
-            logger.info(f"Procesando {len(accionistas_data)} accionistas para tercero {tercero.id}")
-            
-            # Validar que la suma de porcentajes no exceda 100%
-            total_porcentaje = sum(float(ac.get('porcentajeParticipacion', 0)) for ac in accionistas_data)
-            if total_porcentaje > 100:
-                return Response({
-                    'error': f'La suma de porcentajes de participación ({total_porcentaje}%) no puede exceder 100%'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            for acc_data in accionistas_data:
+        # Preparar estructura de accionistas para procesamiento
+        data_accionistas = {}
+        
+        # Estructura nueva (jerárquica)
+        accionistas_nuevos = None
+        if 'accionistas' in request.data:
+            accionistas_nuevos = request.data.get('accionistas')
+            if isinstance(accionistas_nuevos, str):
                 try:
-                    # Validar campos obligatorios
-                    campos_requeridos = ['nombre', 'tipoIdentificacion', 'numeroIdentificacion', 'porcentajeParticipacion']
-                    if not all(key in acc_data for key in campos_requeridos):
-                        return Response({
-                            'error': f'Cada accionista debe tener: {", ".join(campos_requeridos)}'
-                        }, status=status.HTTP_400_BAD_REQUEST)
-                    
-                    # Crear accionista
-                    Accionista.objects.create(
-                        tercero=tercero,
-                        nombre=acc_data['nombre'],
-                        tipo_identificacion=acc_data['tipoIdentificacion'],
-                        numero_identificacion=acc_data['numeroIdentificacion'],
-                        porcentaje_participacion=float(acc_data['porcentajeParticipacion'])
-                    )
-                    logger.info(f"Accionista creado: {acc_data['nombre']} ({acc_data['porcentajeParticipacion']}%)")
-                    
-                except Exception as e:
-                    logger.error(f"Error creando accionista: {str(e)}")
-                    return Response({
-                        'error': f'Error procesando accionistas: {str(e)}'
-                    }, status=status.HTTP_400_BAD_REQUEST)
+                    accionistas_nuevos = json_module.loads(accionistas_nuevos)
+                except json_module.JSONDecodeError:
+                    accionistas_nuevos = []
+            data_accionistas['accionistas'] = accionistas_nuevos or []
         
-        # ===== FIN PROCESAMIENTO REPRESENTANTES Y ACCIONISTAS =====
+        # Estructura legacy (para compatibilidad)
+        accionistas_frontend = request.data.get('accionistas_frontend', accionistas_data)
+        if isinstance(accionistas_frontend, str):
+            logger.warning(f"Accionistas llego como string, parseando: {accionistas_frontend[:100]}...")
+            try:
+                accionistas_frontend = json_module.loads(accionistas_frontend)
+                logger.info(f"Accionistas parseados correctamente: {len(accionistas_frontend)} items")
+            except json_module.JSONDecodeError as e:
+                logger.error(f"Error parseando accionistas JSON: {e}")
+                accionistas_frontend = []
+        data_accionistas['accionistas_frontend'] = accionistas_frontend or []
+        
+        # Procesar accionistas si hay datos
+        if data_accionistas.get('accionistas') or data_accionistas.get('accionistas_frontend'):
+            try:
+                # Validar estructura usando serializer
+                serializer_accionistas = AccionistasMixedSerializer(data=data_accionistas)
+                if not serializer_accionistas.is_valid():
+                    return Response({
+                        'error': 'Datos de accionistas inválidos',
+                        'details': serializer_accionistas.errors
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Procesar con función utilitaria
+                accionistas_creados = procesar_accionistas_completo(tercero, data_accionistas)
+                logger.info(f"EXITO: Procesados {len(accionistas_creados)} accionistas para tercero {tercero.id}")
+                
+            except ValidationError as e:
+                logger.error(f"ERROR: Error validacion accionistas: {str(e)}")
+                return Response({
+                    'error': f'Error validando accionistas: {str(e)}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                logger.error(f"ERROR: Error procesando accionistas: {str(e)}")
+                return Response({
+                    'error': f'Error procesando accionistas: {str(e)}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ===== FIN PROCESAMIENTO ACCIONISTAS =====
         
         # ===== FIN PROCESAMIENTO PEP =====
         
@@ -6855,15 +6870,11 @@ def exportar_tercero_excel(request, tercero_id):
             datos_repr = []
             for repr_legal in representantes:
                 datos_repr.append({
-                    'Documento': repr_legal.numero_documento,
-                    'Tipo Documento': repr_legal.get_tipo_documento_display(),
-                    'Nombres': repr_legal.nombres,
-                    'Apellidos': repr_legal.apellidos,
-                    'Email': repr_legal.email or '',
+                    'Documento': repr_legal.numero_identificacion,  # CORREGIDO
+                    'Tipo Documento': repr_legal.get_tipo_identificacion_display(),  # CORREGIDO
+                    'Nombre Completo': repr_legal.nombre_completo,  # CORREGIDO
                     'Teléfono': repr_legal.telefono or '',
-                    'Cargo': repr_legal.cargo or '',
-                    'Fecha Inicio': repr_legal.fecha_inicio_cargo.strftime('%Y-%m-%d') if repr_legal.fecha_inicio_cargo else '',
-                    'Fecha Fin': repr_legal.fecha_fin_cargo.strftime('%Y-%m-%d') if repr_legal.fecha_fin_cargo else ''
+                    'Dirección': repr_legal.direccion or '',
                 })
             
             df_repr = pd.DataFrame(datos_repr)
@@ -6901,13 +6912,12 @@ def exportar_tercero_excel(request, tercero_id):
             datos_acc = []
             for accionista in accionistas:
                 datos_acc.append({
-                    'Documento': accionista.numero_documento,
-                    'Tipo Documento': accionista.get_tipo_documento_display(),
-                    'Nombres': accionista.nombres,
-                    'Apellidos': accionista.apellidos,
-                    'Email': accionista.email or '',
-                    'Teléfono': accionista.telefono or '',
-                    'Porcentaje Participación': f"{accionista.porcentaje_participacion}%" if accionista.porcentaje_participacion else ''
+                    'Documento': accionista.numero_identificacion,  # CORREGIDO
+                    'Tipo Documento': accionista.get_tipo_identificacion_display(),  # CORREGIDO
+                    'Nombre/Razón Social': accionista.nombre,  # CORREGIDO
+                    'Porcentaje Participación': f"{accionista.porcentaje_participacion}%" if accionista.porcentaje_participacion else '',
+                    'Nivel Jerárquico': accionista.nivel if hasattr(accionista, 'nivel') else 0,
+                    'Empresa Padre': accionista.empresa_padre if hasattr(accionista, 'empresa_padre') else '',
                 })
             
             df_acc = pd.DataFrame(datos_acc)
@@ -7004,3 +7014,123 @@ def exportar_tercero_excel(request, tercero_id):
             'error': 'Error interno del servidor',
             'message': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    # ✨ NUEVOS ENDPOINTS PARA ESTRUCTURA JERÁRQUICA DE ACCIONISTAS
+    
+    @action(detail=True, methods=['get'])
+    def accionistas_jerarquicos(self, request, pk=None):
+        """
+        Obtener estructura jerárquica completa de accionistas
+        GET /api/terceros/{id}/accionistas_jerarquicos/
+        """
+        from terceros.utils.accionistas_utils import obtener_estructura_jerarquica
+        from django.db import models
+        
+        tercero = self.get_object()
+        
+        try:
+            estructura = obtener_estructura_jerarquica(tercero)
+            
+            return Response({
+                'success': True,
+                'data': estructura,
+                'meta': {
+                    'tercero_id': tercero.id,
+                    'total_accionistas': tercero.accionistas.count(),
+                    'niveles': tercero.accionistas.aggregate(
+                        max_nivel=models.Max('nivel')
+                    )['max_nivel'] or 0
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo accionistas jerárquicos: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
+    def actualizar_accionistas(self, request, pk=None):
+        """
+        Actualizar estructura de accionistas (jerárquica o legacy)
+        POST /api/terceros/{id}/actualizar_accionistas/
+        """
+        from terceros.utils.accionistas_utils import procesar_accionistas_completo
+        from terceros.serializers import AccionistasMixedSerializer
+        
+        tercero = self.get_object()
+        
+        try:
+            # Validar datos de entrada
+            serializer = AccionistasMixedSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response({
+                    'success': False,
+                    'error': 'Datos inválidos',
+                    'details': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Procesar accionistas
+            accionistas_creados = procesar_accionistas_completo(tercero, request.data)
+            
+            # Retornar estructura actualizada
+            from terceros.utils.accionistas_utils import obtener_estructura_jerarquica
+            estructura = obtener_estructura_jerarquica(tercero)
+            
+            return Response({
+                'success': True,
+                'message': f'{len(accionistas_creados)} accionistas procesados correctamente',
+                'data': estructura
+            })
+            
+        except ValidationError as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error actualizando accionistas: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'])
+    def validar_accionistas(self, request, pk=None):
+        """
+        Validar estructura de accionistas sin guardar cambios
+        POST /api/terceros/{id}/validar_accionistas/
+        """
+        from terceros.validators.accionistas_validators import ValidadorAccionistas
+        
+        tercero = self.get_object()
+        
+        try:
+            accionistas = request.data.get('accionistas', [])
+            accionistas_frontend = request.data.get('accionistas_frontend', [])
+            
+            if accionistas:
+                # Validar estructura jerárquica
+                resultado = ValidadorAccionistas.validar_estructura_jerarquica(accionistas)
+            elif accionistas_frontend:
+                # Validar estructura legacy
+                from terceros.validators.accionistas_validators import ValidadorCompatibilidad
+                resultado = ValidadorCompatibilidad.validar_mapeo_legacy_a_nueva(accionistas_frontend)
+            else:
+                return Response({
+                    'success': False,
+                    'error': 'Debe proporcionar accionistas o accionistas_frontend'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response({
+                'success': True,
+                'validacion': resultado
+            })
+            
+        except Exception as e:
+            logger.error(f"Error validando accionistas: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

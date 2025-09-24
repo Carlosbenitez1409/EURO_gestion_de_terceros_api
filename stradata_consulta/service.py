@@ -214,51 +214,177 @@ class StrataDataService:
     def _recopilar_personas_tercero(self, tercero_data: Dict[str, Any]) -> List[Dict[str, str]]:
         """
         Recopila todas las personas asociadas al tercero para consulta
+        Actualizado para manejar tanto personas naturales como jurídicas
         """
         personas = []
         
         # 1. Datos básicos del tercero
-        if tercero_data.get('nombres') and tercero_data.get('numero_documento'):
-            nombre_completo = f"{tercero_data['nombres']} {tercero_data.get('apellidos', '')}".strip()
-            personas.append({
-                'nombre': nombre_completo,
-                'identificacion': tercero_data['numero_documento'],
-                'tipo': 'C',  # Cédula por defecto
-                'categoria': 'Tercero principal'
-            })
-        
+        if tercero_data.get('numero_documento'):
+            # Determinar el nombre según el tipo de persona
+            if tercero_data.get('tipo_persona') == 'juridica':
+                # Para persona jurídica, usar razón social o nombres
+                nombre_completo = (tercero_data.get('razon_social') or 
+                                 tercero_data.get('nombres') or 
+                                 tercero_data.get('nombre_completo', '')).strip()
+                tipo_doc = 'NIT'  # Personas jurídicas siempre NIT
+            else:
+                # Para persona natural, usar nombres y apellidos
+                nombre_completo = f"{tercero_data.get('nombres', '')} {tercero_data.get('apellidos', '')}".strip()
+                # Mapear tipo de documento para persona natural
+                tipo_doc_mapping = {
+                    'cedula_ciudadania': 'CC',
+                    'cedula_extranjeria': 'CE',
+                    'pasaporte': 'PP',
+                    'nit': 'NIT',
+                    'CC': 'CC',
+                    'CE': 'CE', 
+                    'PP': 'PP',
+                    'NIT': 'NIT'
+                }
+                tipo_doc = tipo_doc_mapping.get(tercero_data.get('tipo_documento', 'CC'), 'CC')
+            
+            if nombre_completo:  # Solo agregar si hay nombre
+                personas.append({
+                    'nombre': nombre_completo,
+                    'identificacion': tercero_data['numero_documento'],
+                    'tipo': tipo_doc,
+                    'categoria': f'Tercero principal ({tercero_data.get("tipo_persona", "natural")})'
+                })
+
         # 2. Representantes legales
-        for rep in tercero_data.get('representantes_legales', []):
-            if rep.get('nombres') and rep.get('numero_documento'):
-                nombre_rep = f"{rep['nombres']} {rep.get('apellidos', '')}".strip()
-                personas.append({
-                    'nombre': nombre_rep,
-                    'identificacion': rep['numero_documento'],
-                    'tipo': 'C',
-                    'categoria': 'Representante legal'
-                })
-        
+        representantes = tercero_data.get('representantes_legales', []) or tercero_data.get('representantes', [])
+        for rep in representantes:
+            if rep.get('numero_identificacion') or rep.get('numero_documento'):
+                # Obtener nombre del representante
+                nombre_rep = (rep.get('nombre_completo') or 
+                            rep.get('nombres_completo') or
+                            f"{rep.get('nombres', '')} {rep.get('apellidos', '')}").strip()
+                
+                # Obtener número de identificación
+                numero_id = rep.get('numero_identificacion') or rep.get('numero_documento')
+                
+                # Mapear tipo de documento
+                tipo_doc_mapping = {
+                    'cedula_ciudadania': 'CC',
+                    'cedula_extranjeria': 'CE',
+                    'pasaporte': 'PP',
+                    'nit': 'NIT',
+                    'CC': 'CC',
+                    'CE': 'CE',
+                    'PP': 'PP',
+                    'NIT': 'NIT'
+                }
+                tipo_doc = tipo_doc_mapping.get(rep.get('tipo_identificacion', 'CC'), 'CC')
+                
+                if nombre_rep and numero_id:
+                    personas.append({
+                        'nombre': nombre_rep,
+                        'identificacion': numero_id,
+                        'tipo': tipo_doc,
+                        'categoria': 'Representante legal'
+                    })
+
         # 3. Información PEP
-        for pep in tercero_data.get('informacion_pep', []):
-            if pep.get('nombres_pep') and pep.get('numero_documento_pep'):
+        pep_data = tercero_data.get('informacion_pep', []) or tercero_data.get('informacion_pep_nueva', [])
+        for pep in pep_data:
+            if pep.get('numero_identificacion') and pep.get('nombre'):
+                # Mapear tipo de documento
+                tipo_doc_mapping = {
+                    'cedula_ciudadania': 'CC',
+                    'cedula_extranjeria': 'CE', 
+                    'pasaporte': 'PP',
+                    'nit': 'NIT',
+                    'CC': 'CC',
+                    'CE': 'CE',
+                    'PP': 'PP',
+                    'NIT': 'NIT'
+                }
+                tipo_doc = tipo_doc_mapping.get(pep.get('tipo', 'CC'), 'CC')
+                
                 personas.append({
-                    'nombre': pep['nombres_pep'],
-                    'identificacion': pep['numero_documento_pep'],
-                    'tipo': 'C',
-                    'categoria': 'Persona PEP'
+                    'nombre': pep['nombre'],
+                    'identificacion': pep['numero_identificacion'],
+                    'tipo': tipo_doc,
+                    'categoria': f'Persona PEP - {pep.get("cargo", "N/A")}'
+                })
+
+        # 4. Accionistas y subaccionistas
+        accionistas = tercero_data.get('accionistas', [])
+        for accionista in accionistas:
+            if accionista.get('numero_identificacion') and accionista.get('nombre'):
+                # Mapear tipo de documento
+                tipo_doc_mapping = {
+                    'cedula_ciudadania': 'CC',
+                    'cedula_extranjeria': 'CE',
+                    'pasaporte': 'PP', 
+                    'nit': 'NIT',
+                    'CC': 'CC',
+                    'CE': 'CE',
+                    'PP': 'PP',
+                    'NIT': 'NIT'
+                }
+                tipo_doc = tipo_doc_mapping.get(accionista.get('tipo_identificacion', 'CC'), 'CC')
+                
+                porcentaje = accionista.get('porcentaje_participacion', accionista.get('porcentaje', 0))
+                personas.append({
+                    'nombre': accionista['nombre'],
+                    'identificacion': accionista['numero_identificacion'],
+                    'tipo': tipo_doc,
+                    'categoria': f'Accionista principal ({porcentaje}%)'
                 })
         
-        # 4. Accionistas
-        for accionista in tercero_data.get('accionistas', []):
-            if accionista.get('nombres') and accionista.get('numero_documento'):
-                nombre_acc = f"{accionista['nombres']} {accionista.get('apellidos', '')}".strip()
+        # 5. Subaccionistas (accionistas de accionistas)
+        subaccionistas = tercero_data.get('subaccionistas', [])
+        for subaccionista in subaccionistas:
+            if subaccionista.get('numero_identificacion') and subaccionista.get('nombre'):
+                # Mapear tipo de documento
+                tipo_doc_mapping = {
+                    'cedula_ciudadania': 'CC',
+                    'cedula_extranjeria': 'CE',
+                    'pasaporte': 'PP', 
+                    'nit': 'NIT',
+                    'CC': 'CC',
+                    'CE': 'CE',
+                    'PP': 'PP',
+                    'NIT': 'NIT'
+                }
+                tipo_doc = tipo_doc_mapping.get(subaccionista.get('tipo_identificacion', 'CC'), 'CC')
+                
+                porcentaje = subaccionista.get('porcentaje_participacion', subaccionista.get('porcentaje', 0))
+                accionista_padre = subaccionista.get('accionista_padre', 'N/A')
+                nivel = subaccionista.get('nivel', 1)
+                
                 personas.append({
-                    'nombre': nombre_acc,
-                    'identificacion': accionista['numero_documento'],
-                    'tipo': 'C',
-                    'categoria': 'Accionista'
+                    'nombre': subaccionista['nombre'],
+                    'identificacion': subaccionista['numero_identificacion'],
+                    'tipo': tipo_doc,
+                    'categoria': f'Subaccionista nivel {nivel} ({porcentaje}%) - Sub de: {accionista_padre}'
                 })
         
+        # 6. Composición accionaria (para compatibilidad con diferentes estructuras)
+        composicion = tercero_data.get('composicion_accionaria', [])
+        for comp in composicion:
+            if comp.get('numero_identificacion') and comp.get('nombre_razon_social'):
+                tipo_doc_mapping = {
+                    'cedula_ciudadania': 'CC',
+                    'cedula_extranjeria': 'CE',
+                    'pasaporte': 'PP',
+                    'nit': 'NIT',
+                    'CC': 'CC',
+                    'CE': 'CE', 
+                    'PP': 'PP',
+                    'NIT': 'NIT'
+                }
+                tipo_doc = tipo_doc_mapping.get(comp.get('tipo_identificacion', 'CC'), 'CC')
+                
+                porcentaje = comp.get('porcentaje_participacion', 0)
+                personas.append({
+                    'nombre': comp['nombre_razon_social'],
+                    'identificacion': comp['numero_identificacion'],
+                    'tipo': tipo_doc,
+                    'categoria': f'Composición accionaria ({porcentaje}%)'
+                })
+
         # Eliminar duplicados por número de documento
         personas_unicas = []
         documentos_vistos = set()
@@ -270,6 +396,9 @@ class StrataDataService:
                 personas_unicas.append(persona)
         
         logger.info(f"Recopiladas {len(personas_unicas)} personas únicas para consulta")
+        for persona in personas_unicas:
+            logger.info(f"  - {persona['nombre']} ({persona['tipo']}: {persona['identificacion']}) - {persona['categoria']}")
+        
         return personas_unicas
     
     def _enviar_consulta_masiva(self, archivo_csv: str) -> Dict[str, Any]:

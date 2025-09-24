@@ -393,6 +393,7 @@ class Tercero(models.Model):
         CEDULA_EXTRANJERIA = 'CE', 'Cédula de Extranjería'
         PASAPORTE = 'PA', 'Pasaporte'
         NIT = 'NIT', 'NIT'
+        OTRO = 'OTRO', 'Otro/Exterior'
     
     class TipoPersona(models.TextChoices):
         NATURAL = 'natural', 'Persona Natural'
@@ -423,7 +424,7 @@ class Tercero(models.Model):
     )
     
     tipo_documento = models.CharField(
-        max_length=3,
+        max_length=5,
         choices=TipoDocumento.choices,
         verbose_name='Tipo de Documento'
     )
@@ -487,6 +488,33 @@ class Tercero(models.Model):
     telefono = models.CharField(max_length=20, blank=True)
     celular = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True, null=True, verbose_name='Correo Electrónico')
+    
+    # Campos de contacto separados (nuevos)
+    nombre_persona_contacto = models.CharField(
+        max_length=255, 
+        blank=True, 
+        verbose_name='Nombre Persona de Contacto',
+        help_text='Nombre completo de la persona de contacto principal'
+    )
+    cargo_persona_contacto = models.CharField(
+        max_length=255, 
+        blank=True, 
+        verbose_name='Cargo Persona de Contacto',
+        help_text='Cargo o posición de la persona de contacto en la empresa'
+    )
+    
+    # Campos para activos virtuales (nuevos)
+    manejo_activos_virtuales = models.BooleanField(
+        default=False, 
+        verbose_name='Maneja Activos Virtuales',
+        help_text='Indica si realiza transacciones con criptomonedas, NFT u otros activos virtuales'
+    )
+    detalle_activos_virtuales = models.TextField(
+        blank=True, 
+        null=True, 
+        verbose_name='Detalle de Activos Virtuales',
+        help_text='Especifique los tipos de activos virtuales que maneja (Bitcoin, Ethereum, NFT, etc.)'
+    )
     
     # Calidad tributaria
     responsable_iva = models.BooleanField(default=False)
@@ -2009,6 +2037,30 @@ class Tercero(models.Model):
         
         return reparaciones
 
+    def clean(self):
+        """Validaciones del modelo Tercero"""
+        from django.core.exceptions import ValidationError
+        
+        # Validar que personas jurídicas solo usen NIT
+        if self.tipo_persona in [self.TipoPersona.JURIDICA, self.TipoPersona.PUBLICA]:
+            if self.tipo_documento != self.TipoDocumento.NIT:
+                raise ValidationError(
+                    "Las personas jurídicas y públicas deben usar únicamente NIT como tipo de documento"
+                )
+        
+        # Validar campos de contacto obligatorios para registro nuevo
+        if hasattr(self, '_validar_campos_registro') and self._validar_campos_registro:
+            if not self.nombre_persona_contacto:
+                raise ValidationError("El nombre de la persona de contacto es obligatorio")
+            if not self.cargo_persona_contacto:
+                raise ValidationError("El cargo de la persona de contacto es obligatorio")
+        
+        # Validar activos virtuales condicionales
+        if self.manejo_activos_virtuales and not self.detalle_activos_virtuales:
+            raise ValidationError(
+                "Debe especificar el detalle de activos virtuales cuando indica que los maneja"
+            )
+
     def __str__(self):
         if self.tipo_persona == self.TipoPersona.NATURAL:
             return f"{self.nombres} {self.apellidos or ''} ({self.numero_documento})"
@@ -2337,28 +2389,178 @@ class ComposicionAccionaria(models.Model):
 
 class Accionista(models.Model):
     """
-    Modelo específico para accionistas según PROMPT
+    Modelo específico para accionistas con estructura jerárquica
     """
     tercero = models.ForeignKey(Tercero, on_delete=models.CASCADE, related_name='accionistas')
-    nombre = models.CharField(max_length=200)
-    tipo_identificacion = models.CharField(max_length=5, choices=[
-        ('CC', 'Cédula de Ciudadanía'),
-        ('CE', 'Cédula de Extranjería'),
-        ('PP', 'Pasaporte'),
-        ('NIT', 'NIT'),
-        ('RUT', 'RUT')
-    ])
-    numero_identificacion = models.CharField(max_length=20)
-    porcentaje_participacion = models.DecimalField(max_digits=5, decimal_places=2)
+    
+    # ✨ NUEVOS CAMPOS PARA ESTRUCTURA JERÁRQUICA
+    empresa_padre = models.CharField(
+        max_length=50, 
+        blank=True, 
+        default='',
+        verbose_name='Identificación Empresa Padre',
+        help_text='Identificación de la empresa padre (para sub-accionistas)'
+    )
+    
+    nivel = models.IntegerField(
+        default=0,
+        verbose_name='Nivel Jerárquico',
+        help_text='0=principal, 1=sub-accionista, etc.'
+    )
+    
+    padre = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='sub_accionistas',
+        verbose_name='Accionista Padre'
+    )
+    
+    # CAMPOS EXISTENTES
+    nombre = models.CharField(max_length=200, verbose_name='Nombre/Razón Social')
+    
+    tipo_identificacion = models.CharField(
+        max_length=5, 
+        choices=[
+            ('CC', 'Cédula de Ciudadanía'),
+            ('CE', 'Cédula de Extranjería'),
+            ('PP', 'Pasaporte'),
+            ('NIT', 'NIT'),
+            ('RUT', 'RUT'),
+            ('OTRO', 'Otro')  # ✨ Agregamos OTRO para compatibilidad
+        ],
+        verbose_name='Tipo de Identificación'
+    )
+    
+    numero_identificacion = models.CharField(
+        max_length=50,  # ✨ Aumentamos tamaño para IDs más largos
+        verbose_name='Número de Identificación'
+    )
+    
+    porcentaje_participacion = models.DecimalField(
+        max_digits=5, 
+        decimal_places=2,
+        verbose_name='Porcentaje de Participación'
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Accionista"
         verbose_name_plural = "Accionistas"
+        unique_together = ['tercero', 'numero_identificacion', 'nivel']  # Evitar duplicados por nivel
+        indexes = [
+            models.Index(fields=['tercero']),
+            models.Index(fields=['empresa_padre']),
+            models.Index(fields=['padre']),
+            models.Index(fields=['nivel']),
+        ]
         
     def __str__(self):
-        return f"{self.nombre} - {self.porcentaje_participacion}%"
+        nivel_str = f" (Nivel {self.nivel})" if self.nivel > 0 else ""
+        return f"{self.nombre} - {self.porcentaje_participacion}%{nivel_str}"
+    
+    # ✨ NUEVOS MÉTODOS PARA ESTRUCTURA JERÁRQUICA
+    @property
+    def es_principal(self):
+        """Determina si es un accionista principal (nivel 0)"""
+        return self.nivel == 0 and self.padre is None
+    
+    @property
+    def es_sub_accionista(self):
+        """Determina si es un sub-accionista (nivel > 0)"""
+        return self.nivel > 0 and self.padre is not None
+    
+    def get_sub_accionistas(self):
+        """Retorna todos los sub-accionistas de este accionista"""
+        return self.sub_accionistas.all().order_by('nombre')
+    
+    def get_accionistas_recursivo(self):
+        """Retorna estructura jerárquica completa de sub-accionistas"""
+        result = []
+        for sub in self.get_sub_accionistas():
+            sub_data = {
+                'accionista': sub,
+                'sub_accionistas': sub.get_accionistas_recursivo()
+            }
+            result.append(sub_data)
+        return result
+    
+    def validar_porcentajes_nivel(self):
+        """Valida que la suma de porcentajes del mismo nivel no exceda 100%"""
+        from decimal import Decimal
+        
+        if self.padre:
+            # Para sub-accionistas, validar dentro del mismo padre
+            hermanos = self.padre.sub_accionistas.exclude(id=self.id)
+            total = sum(Decimal(str(h.porcentaje_participacion)) for h in hermanos) + Decimal(str(self.porcentaje_participacion))
+        else:
+            # Para principales, validar dentro del mismo tercero
+            hermanos = self.tercero.accionistas.filter(nivel=0).exclude(id=self.id)
+            total = sum(Decimal(str(h.porcentaje_participacion)) for h in hermanos) + Decimal(str(self.porcentaje_participacion))
+        
+        return total <= Decimal('100')
+    
+    def clean(self):
+        """Validaciones del modelo"""
+        from django.core.exceptions import ValidationError
+        
+        # Validar consistencia de empresa_padre con padre
+        if self.padre and self.empresa_padre:
+            if self.empresa_padre != self.padre.numero_identificacion:
+                raise ValidationError(
+                    f"empresa_padre ({self.empresa_padre}) debe coincidir con la identificación del padre ({self.padre.numero_identificacion})"
+                )
+        
+        # Validar nivel
+        if self.padre and self.nivel <= self.padre.nivel:
+            raise ValidationError("El nivel debe ser mayor al del accionista padre")
+        
+        # Validar porcentajes
+        if not self.validar_porcentajes_nivel():
+            raise ValidationError("La suma de porcentajes excede 100% en este nivel")
+        
+        # Solo validar sub-accionistas si el objeto ya tiene ID (está guardado)
+        if self.pk and self.sub_accionistas.exists() and self.tipo_identificacion != 'NIT':
+            raise ValidationError("Solo empresas (NIT) pueden tener sub-accionistas")
+    
+    def save(self, *args, **kwargs):
+        """Override del save para aplicar validaciones"""
+        # Validaciones que no requieren acceso a sub_accionistas
+        self._validate_basic_fields()
+        super().save(*args, **kwargs)
+        
+        # Validaciones post-save
+        self._validate_post_save()
+    
+    def _validate_basic_fields(self):
+        """Validaciones básicas que no requieren acceso a relaciones"""
+        from django.core.exceptions import ValidationError
+        
+        # Validar consistencia de empresa_padre con padre
+        if self.padre and self.empresa_padre:
+            if self.empresa_padre != self.padre.numero_identificacion:
+                raise ValidationError(
+                    f"empresa_padre ({self.empresa_padre}) debe coincidir con la identificación del padre ({self.padre.numero_identificacion})"
+                )
+        
+        # Validar nivel
+        if self.padre and self.nivel <= self.padre.nivel:
+            raise ValidationError("El nivel debe ser mayor al del accionista padre")
+        
+        # Validar porcentajes
+        if not self.validar_porcentajes_nivel():
+            raise ValidationError("La suma de porcentajes excede 100% en este nivel")
+    
+    def _validate_post_save(self):
+        """Validaciones después de guardar (cuando ya tiene ID)"""
+        from django.core.exceptions import ValidationError
+        
+        # Solo empresas (NIT) pueden tener sub-accionistas
+        if self.sub_accionistas.exists() and self.tipo_identificacion != 'NIT':
+            raise ValidationError("Solo empresas (NIT) pueden tener sub-accionistas")
 
 class InformacionFinanciera(models.Model):
     tercero = models.OneToOneField(Tercero, on_delete=models.CASCADE, related_name='informacion_financiera')

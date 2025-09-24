@@ -207,12 +207,20 @@ class TerceroPublicRegistrationSerializer(serializers.ModelSerializer):
     Con validaciones adicionales de seguridad
     """
     
+    # Hacer campos obligatorios explícitamente
+    nombre_persona_contacto = serializers.CharField(max_length=255, required=True)
+    cargo_persona_contacto = serializers.CharField(max_length=255, required=True)
+    
     class Meta:
         model = Tercero
         fields = [
             'tipo_formulario', 'tipo_documento', 'numero_documento', 'tipo_persona',
             'nombres', 'apellidos', 'razon_social', 'email', 'telefono',
-            'direccion', 'ciudad', 'departamento'
+            'direccion', 'ciudad', 'departamento',
+            # Nuevos campos de contacto separados
+            'nombre_persona_contacto', 'cargo_persona_contacto',
+            # Nuevos campos de activos virtuales
+            'manejo_activos_virtuales', 'detalle_activos_virtuales'
         ]
     
     def validate_email(self, value):
@@ -247,6 +255,57 @@ class TerceroPublicRegistrationSerializer(serializers.ModelSerializer):
                 )
         return value
     
+    def validate_nombre_persona_contacto(self, value):
+        """
+        Validación del nombre de persona de contacto
+        """
+        if not value or not value.strip():
+            raise serializers.ValidationError("El nombre de la persona de contacto es obligatorio.")
+        return value.strip()
+    
+    def validate_cargo_persona_contacto(self, value):
+        """
+        Validación del cargo de persona de contacto
+        """
+        if not value or not value.strip():
+            raise serializers.ValidationError("El cargo de la persona de contacto es obligatorio.")
+        return value.strip()
+    
+    def validate_tipo_documento(self, value):
+        """
+        Validación del tipo de documento según tipo de persona
+        """
+        # Obtener tipo_persona del contexto (si está siendo validado en conjunto)
+        tipo_persona = self.initial_data.get('tipo_persona')
+        
+        if tipo_persona in ['juridica', 'publica']:
+            if value != 'NIT':
+                raise serializers.ValidationError(
+                    "Las personas jurídicas y públicas deben usar únicamente NIT como tipo de documento."
+                )
+        
+        return value
+    
+    def validate(self, data):
+        """
+        Validaciones generales que requieren múltiples campos
+        """
+        # Validar tipo documento para jurídicas
+        if data.get('tipo_persona') in ['juridica', 'publica']:
+            if data.get('tipo_documento') != 'NIT':
+                raise serializers.ValidationError({
+                    'tipo_documento': 'Las personas jurídicas y públicas deben usar únicamente NIT.'
+                })
+        
+        # Validar activos virtuales condicionales
+        if data.get('manejo_activos_virtuales'):
+            if not data.get('detalle_activos_virtuales', '').strip():
+                raise serializers.ValidationError({
+                    'detalle_activos_virtuales': 'Debe especificar el detalle de activos virtuales cuando indica que los maneja.'
+                })
+        
+        return data
+
     def create(self, validated_data):
         """
         Crear tercero con configuraciones específicas para registro público
@@ -256,12 +315,18 @@ class TerceroPublicRegistrationSerializer(serializers.ModelSerializer):
         estado_inicial = 'asignada_administrador' if tipo_formulario == 'actualizacion' else 'pendiente'
         validated_data['estado_aprobacion'] = estado_inicial
         
-        tercero = super().create(validated_data)
+        # Configurar flag para validar campos de registro
+        tercero = Tercero(**validated_data)
+        tercero._validar_campos_registro = True
+        tercero.full_clean()  # Ejecutar validaciones del modelo
+        tercero.save()
         
         logger.info(
             f"Public registration created: {tercero.numero_documento} - "
             f"{tercero.nombres} {tercero.apellidos or tercero.razon_social} - "
-            f"Tipo: {tercero.tipo_formulario} - Estado: {tercero.estado_aprobacion}"
+            f"Tipo: {tercero.tipo_formulario} - Estado: {tercero.estado_aprobacion} - "
+            f"Contacto: {tercero.nombre_persona_contacto} ({tercero.cargo_persona_contacto}) - "
+            f"Activos virtuales: {tercero.manejo_activos_virtuales}"
         )
         
         return tercero
@@ -579,18 +644,154 @@ class InformacionFinancieraSerializer(serializers.ModelSerializer):
 
 class AccionistaSerializer(serializers.ModelSerializer):
     """
-    Serializer para Accionista según PROMPT
+    Serializer para Accionista con estructura jerárquica
     """
+    # ✨ NUEVOS CAMPOS PARA ESTRUCTURA JERÁRQUICA
+    sub_accionistas = serializers.SerializerMethodField(read_only=True)
+    
+    # ✨ CAMPOS PARA COMPATIBILIDAD CON FRONTEND
+    empresaPadre = serializers.CharField(
+        source='empresa_padre',
+        max_length=50,
+        allow_blank=True,
+        default='',
+        required=False
+    )
+    identificacion = serializers.CharField(source='numero_identificacion', max_length=50)
+    tipo = serializers.CharField(source='tipo_identificacion', max_length=10)
+    porcentaje = serializers.DecimalField(
+        source='porcentaje_participacion',
+        max_digits=5,
+        decimal_places=2,
+        min_value=0.01,
+        max_value=100
+    )
+    
     class Meta:
         model = Accionista
-        fields = '__all__'
-        read_only_fields = ('id', 'tercero', 'created_at', 'updated_at')
-        
-    def validate_porcentaje_participacion(self, value):
-        """Validar que el porcentaje esté entre 0 y 100"""
-        if value < 0 or value > 100:
-            raise serializers.ValidationError("El porcentaje debe estar entre 0 y 100")
+        fields = [
+            'id', 'tercero', 'nombre', 'identificacion', 'tipo', 'porcentaje',
+            'empresaPadre', 'nivel', 'padre', 'sub_accionistas',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ('id', 'tercero', 'created_at', 'updated_at', 'sub_accionistas')
+    
+    def get_sub_accionistas(self, obj):
+        """Obtener sub-accionistas recursivamente"""
+        if obj.sub_accionistas.exists():
+            return AccionistaSerializer(obj.sub_accionistas.all(), many=True).data
+        return []
+    
+    def validate_porcentaje(self, value):
+        """Validar que el porcentaje esté entre 0.01 y 100"""
+        if value < 0.01 or value > 100:
+            raise serializers.ValidationError("El porcentaje debe estar entre 0.01 y 100")
         return value
+    
+    def validate(self, attrs):
+        """Validaciones a nivel de objeto"""
+        # Si tiene empresa_padre, debe tener padre
+        empresa_padre = attrs.get('empresa_padre', '')
+        padre = attrs.get('padre')
+        
+        if empresa_padre and not padre:
+            raise serializers.ValidationError({
+                'empresaPadre': 'Si especifica empresa_padre, debe proporcionar el padre'
+            })
+        
+        # Validar consistencia entre empresa_padre y padre
+        if padre and empresa_padre:
+            if empresa_padre != padre.numero_identificacion:
+                raise serializers.ValidationError({
+                    'empresaPadre': f'empresa_padre debe coincidir con la identificación del padre ({padre.numero_identificacion})'
+                })
+        
+        return attrs
+
+
+# ✨ NUEVOS SERIALIZERS PARA ESTRUCTURA JERÁRQUICA
+class AccionistaJerarquicoSerializer(serializers.Serializer):
+    """
+    Serializer para recibir estructura jerárquica desde frontend
+    """
+    empresaPadre = serializers.CharField(max_length=50, allow_blank=True, default='', required=False)
+    nombre = serializers.CharField(max_length=255)
+    identificacion = serializers.CharField(max_length=50)
+    tipo = serializers.ChoiceField(choices=['CC', 'CE', 'NIT', 'OTRO'])
+    porcentaje = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0.01, max_value=100)
+    subAccionistas = serializers.ListField(
+        child=serializers.DictField(),  # Recursivo - se manejará en la validación
+        allow_empty=True,
+        default=list,
+        required=False
+    )
+    
+    def validate_subAccionistas(self, value):
+        """Validar sub-accionistas recursivamente"""
+        if not value:
+            return value
+        
+        # Validar cada sub-accionista con el mismo serializer
+        for i, sub_acc in enumerate(value):
+            sub_serializer = AccionistaJerarquicoSerializer(data=sub_acc)
+            if not sub_serializer.is_valid():
+                raise serializers.ValidationError(f"Sub-accionista {i+1}: {sub_serializer.errors}")
+        
+        # Validar suma de porcentajes ≤ 100%
+        total_porcentaje = sum(float(sub.get('porcentaje', 0)) for sub in value)
+        if total_porcentaje > 100:
+            raise serializers.ValidationError(f"La suma de porcentajes de sub-accionistas ({total_porcentaje}%) excede 100%")
+        
+        return value
+
+
+class AccionistaLegacySerializer(serializers.Serializer):
+    """
+    Serializer para compatibilidad con estructura legacy
+    """
+    nombre = serializers.CharField(max_length=255)
+    tipoIdentificacion = serializers.CharField(max_length=10)
+    numeroIdentificacion = serializers.CharField(max_length=50)
+    porcentajeParticipacion = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0.01, max_value=100)
+
+
+class AccionistasMixedSerializer(serializers.Serializer):
+    """
+    Serializer para manejar ambas estructuras: nueva y legacy
+    """
+    # ✨ NUEVA ESTRUCTURA JERÁRQUICA
+    accionistas = serializers.ListField(
+        child=AccionistaJerarquicoSerializer(),
+        allow_empty=True,
+        default=list,
+        required=False
+    )
+    
+    # 🔄 ESTRUCTURA LEGACY (para compatibilidad)
+    accionistas_frontend = serializers.ListField(
+        child=AccionistaLegacySerializer(),
+        allow_empty=True,
+        default=list,
+        required=False
+    )
+    
+    def validate(self, attrs):
+        """Validar que al menos una estructura esté presente"""
+        accionistas = attrs.get('accionistas', [])
+        accionistas_frontend = attrs.get('accionistas_frontend', [])
+        
+        if not accionistas and not accionistas_frontend:
+            raise serializers.ValidationError("Debe proporcionar accionistas o accionistas_frontend")
+        
+        # Si ambas están presentes, priorizar la nueva estructura
+        if accionistas and accionistas_frontend:
+            attrs['usar_estructura_nueva'] = True
+        elif accionistas_frontend:
+            attrs['usar_estructura_nueva'] = False
+        else:
+            attrs['usar_estructura_nueva'] = True
+        
+        return attrs
 
 class TerceroVinculacionSerializer(serializers.ModelSerializer):
     """
@@ -684,7 +885,8 @@ class TerceroCompleteSerializer(serializers.ModelSerializer):
     """
     informacion_pep = serializers.SerializerMethodField()
     informacionPEP = serializers.SerializerMethodField()  # Para compatibilidad frontend
-    accionistas_frontend = serializers.SerializerMethodField()
+    accionistas_frontend = serializers.SerializerMethodField()  # Formato legacy
+    accionistas = serializers.SerializerMethodField()  # ✨ Nueva estructura jerárquica
     representantes = serializers.SerializerMethodField()
     
     class Meta:
@@ -719,18 +921,43 @@ class TerceroCompleteSerializer(serializers.ModelSerializer):
         return self.get_informacion_pep(obj)
     
     def get_accionistas_frontend(self, obj):
-        """Obtener accionistas asociados"""
+        """Obtener accionistas asociados en formato legacy (para compatibilidad)"""
         import logging
         logger = logging.getLogger('euro_terceros')
         
-        accionistas = obj.accionistas.all()
+        accionistas = obj.accionistas.all().order_by('nivel', 'nombre')
         logger.info(f"COMPLETE SERIALIZER - Accionistas para tercero {obj.id}: {accionistas.count()}")
         
         if accionistas.exists():
-            data = AccionistaSerializer(accionistas, many=True).data
-            logger.info(f"COMPLETE SERIALIZER - Accionistas serializados: {data}")
-            return data
+            # Generar formato legacy (plano) para compatibilidad
+            legacy_data = []
+            for accionista in accionistas:
+                legacy_data.append({
+                    'id': accionista.id,
+                    'nombre': accionista.nombre,
+                    'tipoIdentificacion': accionista.tipo_identificacion,
+                    'numeroIdentificacion': accionista.numero_identificacion,
+                    'porcentajeParticipacion': float(accionista.porcentaje_participacion),
+                    # Campos adicionales para debugging
+                    'nivel': accionista.nivel,
+                    'empresaPadre': accionista.empresa_padre
+                })
+            
+            logger.info(f"COMPLETE SERIALIZER - Accionistas legacy serializados: {len(legacy_data)} items")
+            return legacy_data
         return []
+    
+    def get_accionistas(self, obj):
+        """Obtener accionistas en estructura jerárquica nueva"""
+        from terceros.utils.accionistas_utils import obtener_estructura_jerarquica
+        
+        try:
+            estructura = obtener_estructura_jerarquica(obj)
+            return estructura.get('accionistas', [])
+        except Exception as e:
+            logger = logging.getLogger('euro_terceros')
+            logger.error(f"Error obteniendo estructura jerárquica: {str(e)}")
+            return []
     
     def get_representantes(self, obj):
         """Obtener representantes legales asociados"""
@@ -889,6 +1116,10 @@ class TerceroVinculacionSerializer(serializers.ModelSerializer):
             'exento_impuesto_renta', 'condiciones_exencion', 'operaciones_moneda_extranjera',
             'detalle_operaciones_extranjera', 'observaciones_adicionales', 'estado_aprobacion',
             'representantes_legales', 'composicion_accionaria', 'informacion_financiera', 'documentos',
+            # Nuevos campos de contacto separados
+            'nombre_persona_contacto', 'cargo_persona_contacto',
+            # Nuevos campos de activos virtuales
+            'manejo_activos_virtuales', 'detalle_activos_virtuales',
             'created_at', 'updated_at'
         ]
         read_only_fields = ('id', 'created_at', 'updated_at')
@@ -926,12 +1157,27 @@ class TerceroVinculacionSerializer(serializers.ModelSerializer):
         if data.get('responsable_iva') and not data.get('correo_facturacion_electronica'):
             raise serializers.ValidationError("Correo para facturación electrónica es obligatorio si es responsable de IVA")
         
-        # Validaciones para gran contribuyente
         if data.get('gran_contribuyente'):
             if not data.get('numero_resolucion_gc'):
                 raise serializers.ValidationError("Número de resolución es obligatorio para gran contribuyente")
             if not data.get('fecha_resolucion_gc'):
                 raise serializers.ValidationError("Fecha de resolución es obligatoria para gran contribuyente")
+        
+        # Validaciones para nuevos campos de contacto
+        if not data.get('nombre_persona_contacto'):
+            raise serializers.ValidationError("El nombre de la persona de contacto es obligatorio")
+        if not data.get('cargo_persona_contacto'):
+            raise serializers.ValidationError("El cargo de la persona de contacto es obligatorio")
+        
+        # Validaciones para tipo de documento según tipo de persona
+        if data.get('tipo_persona') in ['juridica', 'publica']:
+            if data.get('tipo_documento') != 'NIT':
+                raise serializers.ValidationError("Las personas jurídicas y públicas deben usar únicamente NIT como tipo de documento")
+        
+        # Validaciones para activos virtuales
+        if data.get('manejo_activos_virtuales'):
+            if not data.get('detalle_activos_virtuales', '').strip():
+                raise serializers.ValidationError("Debe especificar el detalle de activos virtuales cuando indica que los maneja")
         
         return data
 
