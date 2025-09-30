@@ -78,8 +78,11 @@ class TerceroConDocumentosSerializer(serializers.ModelSerializer):
             # Campos del formulario frontend
             'responsableIVA', 'correoFacturacion', 'granContribuyente', 'numeroResolucionGC', 
             'fechaResolucionGC', 'numeroResolucionAutorretenedor', 'fechaResolucionAutorretenedor',
-            'exentoRenta', 'condicionesExentoRenta', 'ingresoMensual', 'costosGastos', 
-            'otrosIngresos', 'totalIngresos', 'detalleOtrosIngresos', 'operacionesMonedaExtranjera',
+            'exentoRenta', 'condicionesExentoRenta', 
+            # Campos financieros correctos (DecimalField)
+            'ingreso_mensual', 'costos_gastos_mensuales', 'otros_ingresos', 'total_ingresos', 
+            'activos', 'pasivos', 'patrimonio', 'detalle_otros_ingresos',
+            'operacionesMonedaExtranjera',
             'tiposOperacionesMonedaExtranjera', 'manejoAltoEfectivo', 'autorizacionTratamientoDatos',
             'personaExpuestaPolitica', 'detallesPEP', 'origenFondos', 'fuentesFondos', 
             'tiposRecursos', 'constituyePatrimoniosAutonomos', 'declaracionTransparencia',
@@ -125,8 +128,11 @@ class TerceroCompletoPEPSerializer(serializers.ModelSerializer):
             # Campos del formulario frontend COMPLETOS
             'responsableIVA', 'correoFacturacion', 'granContribuyente', 'numeroResolucionGC', 
             'fechaResolucionGC', 'numeroResolucionAutorretenedor', 'fechaResolucionAutorretenedor',
-            'exentoRenta', 'condicionesExentoRenta', 'ingresoMensual', 'costosGastos', 
-            'otrosIngresos', 'totalIngresos', 'detalleOtrosIngresos', 'operacionesMonedaExtranjera',
+            'exentoRenta', 'condicionesExentoRenta', 
+            # Campos financieros correctos (DecimalField)
+            'ingreso_mensual', 'costos_gastos_mensuales', 'otros_ingresos', 'total_ingresos', 
+            'activos', 'pasivos', 'patrimonio', 'detalle_otros_ingresos',
+            'operacionesMonedaExtranjera',
             'tiposOperacionesMonedaExtranjera', 'manejoAltoEfectivo', 'autorizacionTratamientoDatos',
             'personaExpuestaPolitica', 'detallesPEP', 'origenFondos', 'fuentesFondos', 
             'tiposRecursos', 'constituyePatrimoniosAutonomos', 'declaracionTransparencia',
@@ -461,15 +467,23 @@ class TerceroSerializer(serializers.ModelSerializer):
             # Campos del formulario frontend
             'responsableIVA', 'correoFacturacion', 'granContribuyente', 'numeroResolucionGC', 
             'fechaResolucionGC', 'numeroResolucionAutorretenedor', 'fechaResolucionAutorretenedor',
-            'exentoRenta', 'condicionesExentoRenta', 'ingresoMensual', 'costosGastos', 
-            'otrosIngresos', 'totalIngresos', 'detalleOtrosIngresos', 'operacionesMonedaExtranjera',
+            'exentoRenta', 'condicionesExentoRenta', 
+            # Campos financieros correctos (DecimalField)
+            'ingreso_mensual', 'costos_gastos_mensuales', 'otros_ingresos', 'total_ingresos', 
+            'activos', 'pasivos', 'patrimonio', 'detalle_otros_ingresos',
+            'operacionesMonedaExtranjera',
             'tiposOperacionesMonedaExtranjera', 'manejoAltoEfectivo', 'autorizacionTratamientoDatos',
             'personaExpuestaPolitica', 'detallesPEP', 'origenFondos', 'fuentesFondos', 
             'tiposRecursos', 'constituyePatrimoniosAutonomos', 'declaracionTransparencia',
             'representantes', 'accionistas_frontend',
             # Campos específicos para comerciales
             'observaciones_comercial', 'comentarios_aprobacion', 'notas_internas',
-            'fecha_contacto_inicial', 'canal_contacto', 'prioridad_comercial'
+            'fecha_contacto_inicial', 'canal_contacto', 'prioridad_comercial',
+            # Campos del Perfil Comercial - Condiciones de Pago
+            'condiciones_pago_8_dias', 'condiciones_pago_15_dias', 'condiciones_pago_30_dias',
+            'condiciones_pago_45_dias', 'condiciones_pago_60_dias', 'condiciones_pago_otro',
+            'condiciones_pago_otro_valor', 'otras_condiciones_pago',
+            'condiciones_pago_establecidas_por', 'fecha_establecimiento_condiciones'
         ]
         read_only_fields = [
             'id', 'created_at', 'updated_at', 'creado_por', 
@@ -503,6 +517,54 @@ class TerceroSerializer(serializers.ModelSerializer):
     def get_asignado_procesos(self, obj):
         """Obtener ID del usuario asignado a procesos"""
         return obj.asignado_a_procesos_id if obj.asignado_a_procesos else None
+    
+    def to_internal_value(self, data):
+        """
+        Mapeo automático de campos camelCase (frontend) a snake_case (backend)
+        """
+        # Mapeo completo de campos
+        field_mapping = {
+            # Campos financieros
+            'ingresoMensual': 'ingreso_mensual',
+            'costosGastos': 'costos_gastos_mensuales', 
+            'otrosIngresos': 'otros_ingresos',
+            'totalIngresos': 'total_ingresos',
+            'detalleOtrosIngresos': 'detalle_otros_ingresos',
+            
+            # Campos booleanos (campos reales del modelo)
+            'personaExpuestaPolitica': 'personaExpuestaPolitica',
+            'responsableIVA': 'responsableIVA', 
+            'granContribuyente': 'granContribuyente',
+            'manejoAltoEfectivo': 'manejoAltoEfectivo',
+            'autorizacionTratamientoDatos': 'autorizacionTratamientoDatos',
+            
+            # Campos de observaciones (mapeo real)
+            'observaciones': 'observaciones',
+            'observacionesAdicionales': 'observaciones_adicionales',
+            'observacionesComercial': 'observaciones_comercial',
+            'observacionesProcesos': 'observaciones_procesos',
+            'observacionesCumplimiento': 'observaciones_cumplimiento',
+            
+            # Campos del perfil comercial (campos reales)
+            'condicionesPago8Dias': 'condiciones_pago_8_dias',
+            'condicionesPago15Dias': 'condiciones_pago_15_dias',
+            'condicionesPago30Dias': 'condiciones_pago_30_dias',
+            'condicionesPago45Dias': 'condiciones_pago_45_dias',
+            'condicionesPago60Dias': 'condiciones_pago_60_dias',
+            'condicionesPagoOtro': 'condiciones_pago_otro',
+            'condicionesPagoOtroValor': 'condiciones_pago_otro_valor',
+            'otrasCondicionesPago': 'otras_condiciones_pago',
+        }
+        
+        # Aplicar mapeo si los campos camelCase están presentes
+        data_copy = data.copy() if hasattr(data, 'copy') else dict(data)
+        
+        for camel_case, snake_case in field_mapping.items():
+            if camel_case in data_copy:
+                # Transferir valor del campo camelCase al snake_case
+                data_copy[snake_case] = data_copy.pop(camel_case)
+                
+        return super().to_internal_value(data_copy)
     
     def validate(self, attrs):
         """

@@ -46,6 +46,7 @@ urlpatterns = [
     path('api/dashboard/', include('dashboard.urls')),
     path('api/notifications/', include('notifications.urls')),  # Agregar URLs de notificaciones
     path('api/stradata/', include('stradata_consulta.urls')),  # URLs de Stradata
+    path('api/usuarios-consultas/', include('usuarios_consultas.urls')),  # URLs de Sistema de Usuarios GH
     # path('api/debida-diligencia/', include('debida_diligencia.urls')),  # Eliminado - usar sistema terceros
     path('api/email/', include('euro_terceros.email_urls')),  # URLs del sistema de correos
 ]

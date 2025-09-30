@@ -619,6 +619,73 @@ class StrataDataService:
                 'message': str(e)
             }
     
+    def ejecutar_consulta_personas(self, personas: List[Dict[str, str]], username: str = None) -> Dict[str, Any]:
+        """
+        Ejecuta consulta masiva directamente con una lista de personas
+        Ideal para consultas desde el sistema de usuarios GH
+        """
+        if not self.is_authenticated or not self.session:
+            return {
+                'success': False,
+                'error': 'No hay sesión autenticada en Stradata'
+            }
+        
+        try:
+            if not personas:
+                return {
+                    'success': False,
+                    'error': 'No se proporcionaron personas para consultar'
+                }
+            
+            logger.info(f"Consultando {len(personas)} personas directamente en Stradata")
+            
+            # Generar CSV temporal con las personas
+            archivo_csv = self._generar_csv_temporal(personas)
+            
+            try:
+                # Enviar consulta a Stradata
+                resultado_envio = self._enviar_consulta_masiva(archivo_csv)
+                
+                if not resultado_envio.get('id_busqueda'):
+                    return {
+                        'success': False,
+                        'error': 'No se obtuvo id_busqueda de Stradata',
+                        'respuesta_stradata': resultado_envio
+                    }
+                
+                # Disparar búsquedas en todos los servicios
+                resultado_busquedas = self._disparar_busquedas(resultado_envio['id_busqueda'])
+                
+                return {
+                    'success': True,
+                    'message': 'Consulta ejecutada exitosamente. Stradata procesará en background y enviará resultados por correo.',
+                    'data': {
+                        'personas_consultadas': len(personas),
+                        'personas': [f"{p['nombre']} ({p['identificacion']})" for p in personas],
+                        'id_busqueda': resultado_envio['id_busqueda'],
+                        'codigo_busqueda': resultado_envio['codigo_busqueda'],
+                        'id_plantilla': resultado_envio['id_plantilla'],
+                        'servicios': resultado_busquedas['servicios_disparados'],
+                        'resumen_servicios': resultado_busquedas['resumen']
+                    }
+                }
+                
+            finally:
+                # Limpiar archivo temporal
+                try:
+                    import os
+                    os.unlink(archivo_csv)
+                    logger.info(f"Archivo CSV temporal eliminado: {archivo_csv}")
+                except Exception as e:
+                    logger.warning(f"No se pudo eliminar archivo temporal {archivo_csv}: {str(e)}")
+                    
+        except Exception as e:
+            logger.error(f"Error ejecutando consulta de personas: {str(e)}")
+            return {
+                'success': False,
+                'error': f'Error ejecutando consulta: {str(e)}'
+            }
+
     def close_session(self):
         """Cierra la sesión"""
         self.session.close()

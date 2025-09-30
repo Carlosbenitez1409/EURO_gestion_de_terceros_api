@@ -669,13 +669,6 @@ class Tercero(models.Model):
     exentoRenta = models.BooleanField(null=True, blank=True, verbose_name='Exento Renta (Frontend)')
     condicionesExentoRenta = models.TextField(blank=True, verbose_name='Condiciones Exento Renta (Frontend)')
     
-    # Campos financieros que envía el frontend
-    ingresoMensual = models.CharField(max_length=50, blank=True, verbose_name='Ingreso Mensual (Frontend)')
-    costosGastos = models.CharField(max_length=50, blank=True, verbose_name='Costos y Gastos (Frontend)')
-    otrosIngresos = models.CharField(max_length=50, blank=True, verbose_name='Otros Ingresos (Frontend)')
-    totalIngresos = models.CharField(max_length=50, blank=True, verbose_name='Total Ingresos (Frontend)')
-    detalleOtrosIngresos = models.TextField(blank=True, verbose_name='Detalle Otros Ingresos (Frontend)')
-    
     # Campos comerciales que envía el frontend
     operacionesMonedaExtranjera = models.BooleanField(null=True, blank=True, verbose_name='Operaciones Moneda Extranjera (Frontend)')
     tiposOperacionesMonedaExtranjera = models.JSONField(default=list, blank=True, verbose_name='Tipos Operaciones Moneda Extranjera (Frontend)')
@@ -2217,6 +2210,76 @@ class Tercero(models.Model):
             num_terceros_asignados=Count('terceros_asignados')
         ).order_by('num_terceros_asignados')
     
+    # ==========================================
+    # PERFIL COMERCIAL - Condiciones de Pago
+    # ==========================================
+    condiciones_pago_8_dias = models.BooleanField(
+        default=False,
+        verbose_name='Condiciones de Pago 8 días',
+        help_text='Permite pago a 8 días'
+    )
+    
+    condiciones_pago_15_dias = models.BooleanField(
+        default=False,
+        verbose_name='Condiciones de Pago 15 días',
+        help_text='Permite pago a 15 días'
+    )
+    
+    condiciones_pago_30_dias = models.BooleanField(
+        default=False,
+        verbose_name='Condiciones de Pago 30 días',
+        help_text='Permite pago a 30 días'
+    )
+    
+    condiciones_pago_45_dias = models.BooleanField(
+        default=False,
+        verbose_name='Condiciones de Pago 45 días',
+        help_text='Permite pago a 45 días'
+    )
+    
+    condiciones_pago_60_dias = models.BooleanField(
+        default=False,
+        verbose_name='Condiciones de Pago 60 días',
+        help_text='Permite pago a 60 días'
+    )
+    
+    condiciones_pago_otro = models.BooleanField(
+        default=False,
+        verbose_name='Otras Condiciones de Pago',
+        help_text='Tiene condiciones de pago especiales'
+    )
+    
+    condiciones_pago_otro_valor = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        verbose_name='Especificación Otras Condiciones',
+        help_text='Descripción de las condiciones de pago especiales'
+    )
+    
+    otras_condiciones_pago = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='Observaciones Condiciones de Pago',
+        help_text='Observaciones adicionales sobre las condiciones comerciales'
+    )
+    
+    # Auditoría del perfil comercial
+    condiciones_pago_establecidas_por = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name='Establecidas por',
+        help_text='Usuario que estableció las condiciones de pago'
+    )
+    
+    fecha_establecimiento_condiciones = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='Fecha de Establecimiento',
+        help_text='Fecha y hora cuando se establecieron las condiciones'
+    )
+
     @classmethod
     def get_comerciales_para_seleccion(cls):
         """

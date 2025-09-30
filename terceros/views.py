@@ -383,10 +383,29 @@ class TerceroViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         """
-        Log de actualización
+        Log de actualización y auditoría del perfil comercial
         """
         logger.info(f"Updating tercero {serializer.instance.id} by user: {self.request.user.username}")
-        serializer.save()
+        
+        # Verificar si se están actualizando campos del perfil comercial
+        campos_perfil_comercial = [
+            'condiciones_pago_8_dias', 'condiciones_pago_15_dias', 'condiciones_pago_30_dias',
+            'condiciones_pago_45_dias', 'condiciones_pago_60_dias', 'condiciones_pago_otro',
+            'condiciones_pago_otro_valor', 'otras_condiciones_pago'
+        ]
+        
+        campos_actualizados = set(serializer.validated_data.keys())
+        campos_perfil_actualizados = campos_actualizados.intersection(campos_perfil_comercial)
+        
+        # Si se actualiza el perfil comercial, establecer auditoría
+        if campos_perfil_actualizados and hasattr(self.request.user, 'username'):
+            logger.info(f"Usuario {self.request.user.username} actualizando perfil comercial: {list(campos_perfil_actualizados)}")
+            serializer.save(
+                condiciones_pago_establecidas_por=self.request.user.username,
+                fecha_establecimiento_condiciones=timezone.now()
+            )
+        else:
+            serializer.save()
 
     def update(self, request, *args, **kwargs):
         """
@@ -408,7 +427,16 @@ class TerceroViewSet(viewsets.ModelViewSet):
                 'notas_internas',
                 'fecha_contacto_inicial',
                 'canal_contacto',
-                'prioridad_comercial'
+                'prioridad_comercial',
+                # Campos del Perfil Comercial - Condiciones de Pago
+                'condiciones_pago_8_dias',
+                'condiciones_pago_15_dias',
+                'condiciones_pago_30_dias',
+                'condiciones_pago_45_dias',
+                'condiciones_pago_60_dias',
+                'condiciones_pago_otro',
+                'condiciones_pago_otro_valor',
+                'otras_condiciones_pago'
             ]
             
             # Si el tercero está devuelto a comercial, permitir cambio de estado

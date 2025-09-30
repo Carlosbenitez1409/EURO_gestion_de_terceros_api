@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'validations',
     'notifications',  # Agregar la app de notificaciones
     'stradata_consulta',  # App para consultas Stradata
+    'usuarios_consultas',  # App para Sistema de Usuarios GH
     # 'debida_diligencia',  # App eliminada - usar sistema de terceros en su lugar
     # 'documents',  # Comentar esta línea para evitar conflictos de related_name
 ]

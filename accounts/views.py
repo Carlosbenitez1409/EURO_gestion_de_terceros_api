@@ -356,10 +356,10 @@ def usuarios_disponibles_asignacion(request):
     Obtiene usuarios disponibles para asignación organizados por departamento
     """
     try:
-        # Obtener todos los usuarios activos excepto administradores
+        # Obtener todos los usuarios activos
         usuarios = User.objects.filter(
             is_active=True
-        ).exclude(role='administrador').order_by('role', 'first_name', 'last_name')
+        ).order_by('role', 'first_name', 'last_name')
         
         # Organizar por departamento/rol
         usuarios_por_departamento = {}
