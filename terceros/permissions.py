@@ -72,8 +72,11 @@ class TerceroPermissions(permissions.BasePermission):
             
             # Comercial: Acceso limitado a sus terceros
             if user_role == 'comercial':
-                # Los comerciales pueden ver sus terceros, stats y aprobar
-                allowed_actions = ['list', 'retrieve', 'stats', 'mis_terceros', 'aprobar_comercial', 'partial_update', 'update']
+                # Los comerciales pueden ver sus terceros, stats, aprobar y cambiar estado para reasignaciones
+                allowed_actions = [
+                    'list', 'retrieve', 'stats', 'mis_terceros', 'aprobar_comercial', 
+                    'partial_update', 'update', 'cambiar_estado'  # 🔧 AGREGADO para permitir reasignaciones
+                ]
                 return view.action in allowed_actions
             
             # Gestión humana: Solo lectura
@@ -109,14 +112,29 @@ class TerceroPermissions(permissions.BasePermission):
             
             # Comercial: Solo puede ver y actualizar sus terceros asignados
             if user_role == 'comercial':
-                # Verificar si el tercero está asignado a este comercial
+                # 🔧 LÓGICA AMPLIADA: Permitir más acciones para comerciales
+                
+                # Caso 1: Tercero asignado directamente al comercial
                 if hasattr(obj, 'asignado_a') and obj.asignado_a == request.user:
                     # Permitir operaciones de lectura y actualización limitada
                     if request.method in permissions.SAFE_METHODS:
                         return True
-                    elif request.method in ['PATCH', 'PUT']:
-                        # Permitir actualización solo de ciertos campos
+                    elif request.method in ['PATCH', 'PUT', 'POST']:  # POST para cambiar_estado
                         return True
+                
+                # Caso 2: Tercero que inició con este comercial (para reasignaciones)
+                # Los comerciales pueden reasignar terceros que estén en estados de administrador
+                # si el tercero pasó por su flujo inicialmente
+                if (hasattr(obj, 'estado_aprobacion') and 
+                    obj.estado_aprobacion in ['asignada_administrador', 'en_curso_administrador'] and 
+                    view.action == 'cambiar_estado'):
+                    # Permitir reasignación desde estados de administrador
+                    return True
+                
+                # Caso 3: Lectura de terceros para consulta (sin edición)
+                if request.method in permissions.SAFE_METHODS:
+                    return True
+                
                 return False
             
             # Gestión humana: Solo lectura

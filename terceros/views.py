@@ -1153,6 +1153,15 @@ class TerceroViewSet(viewsets.ModelViewSet):
         nuevo_estado = request.data.get('nuevo_estado') or request.data.get('estado')
         observaciones = request.data.get('observaciones', '')
         asignar_a_id = request.data.get('asignar_a')
+        
+        # 🔍 DEBUG: Log detallado de la petición (sin emojis para Windows)
+        logger.info("CAMBIAR_ESTADO - DEBUG INICIO")
+        logger.info(f"   Tercero ID: {tercero.id}")
+        logger.info(f"   Estado actual: {tercero.estado_aprobacion}")
+        logger.info(f"   Estado solicitado: {nuevo_estado}")
+        logger.info(f"   Usuario: {request.user.username} (rol: {getattr(request.user, 'role', 'N/A')})")
+        logger.info(f"   Asignar a ID: {asignar_a_id}")
+        logger.info(f"   Payload completo: {request.data}")
 
         # Mapeo de estados del frontend al backend para compatibilidad
         estado_mapping = {
@@ -1197,6 +1206,13 @@ class TerceroViewSet(viewsets.ModelViewSet):
                 User.objects.filter(id=asignar_a_id, role='administrador', is_active=True).exists()):
                 es_reasignacion_valida = True
             
+            # 🔧 NUEVO: Permitir reasignación entre administradores (comerciales pueden reasignar)
+            elif (nuevo_estado in ['asignada_administrador', 'en_curso_administrador'] and 
+                  tercero.estado_aprobacion in ['asignada_administrador', 'en_curso_administrador'] and
+                  User.objects.filter(id=asignar_a_id, role='administrador', is_active=True).exists()):
+                es_reasignacion_valida = True
+                logger.info(f"REASIGNACION: Administrador valida - Usuario: {request.user.role} | Estado actual: {tercero.estado_aprobacion} | Estado nuevo: {nuevo_estado}")
+            
             # Permitir reasignación entre comerciales 
             elif (nuevo_estado in ['en_curso_comercial', 'asignado_comercial'] and 
                   tercero.estado_aprobacion in ['en_curso_comercial', 'asignado_comercial'] and
@@ -1210,16 +1226,20 @@ class TerceroViewSet(viewsets.ModelViewSet):
                 es_reasignacion_valida = True
 
         # Validar transición usando el método del modelo (solo si no es reasignación válida)
-        if not es_reasignacion_valida and not tercero.puede_cambiar_a_estado(nuevo_estado, request.user):
-            transiciones_permitidas = tercero.obtener_transiciones_permitidas(request.user)
-            return Response(
-                {
-                    'error': f'Transición no permitida de {tercero.estado_aprobacion} a {nuevo_estado}',
-                    'transiciones_permitidas': list(transiciones_permitidas.keys()),
-                    'rol_usuario': getattr(request.user, 'role', 'sin_rol')
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        if not es_reasignacion_valida:
+            # Para reasignaciones válidas, saltar validación estricta de transición
+            if not tercero.puede_cambiar_a_estado(nuevo_estado, request.user):
+                transiciones_permitidas = tercero.obtener_transiciones_permitidas(request.user)
+                return Response(
+                    {
+                        'error': f'Transición no permitida de {tercero.estado_aprobacion} a {nuevo_estado}',
+                        'transiciones_permitidas': list(transiciones_permitidas.keys()),
+                        'rol_usuario': getattr(request.user, 'role', 'sin_rol')
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            logger.info("EXITO: Reasignacion valida detectada - saltando validacion estricta de transicion")
 
         # Validaciones específicas
         if 'rechazado' in nuevo_estado and not observaciones:

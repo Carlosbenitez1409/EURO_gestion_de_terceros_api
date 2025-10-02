@@ -78,19 +78,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'euro_terceros.wsgi.application'
 
 # ==========================================
-# ==========================================
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME', 'db-euro-terceros'),
-        'USER': os.getenv('DB_USER', 'lambda-db'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'L3vNqpXz'),
-        'HOST': os.getenv('DB_HOST', '162.245.186.12'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-    }
-}
-
-# DATABASE CONFIGURATION
+# DATABASE CONFIGURATION - COMPLETAMENTE DESDE .ENV
 # ==========================================
 USE_SQLITE = config('USE_SQLITE', default=False, cast=bool)
 
@@ -103,15 +91,15 @@ if USE_SQLITE:
         }
     }
 else:
-    # Configuración para PostgreSQL (producción)
+    # Configuración para PostgreSQL - TODO desde variables de entorno
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': config('DATABASE_NAME', default='amin'),
-            'USER': config('DATABASE_USER', default='postgres'),
-            'PASSWORD': config('DATABASE_PASSWORD', default='12345'),
-            'HOST': config('DATABASE_HOST', default='127.0.0.1'),
-            'PORT': config('DATABASE_PORT', default='5432'),
+            'NAME': config('DATABASE_NAME'),          
+            'USER': config('DATABASE_USER'),          
+            'PASSWORD': config('DATABASE_PASSWORD'),  
+            'HOST': config('DATABASE_HOST'),          
+            'PORT': config('DATABASE_PORT', default='5432'),  # Puerto tiene default común
         }
     }
 
